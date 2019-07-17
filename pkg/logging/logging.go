@@ -21,6 +21,7 @@ import (
 	"log/syslog"
 	"os"
 	"regexp"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -30,8 +31,8 @@ import (
 
 const (
 	SLevel = "syslog.level"
-
 	Syslog = "syslog"
+	Level  = "level"
 )
 
 var (
@@ -56,6 +57,16 @@ var (
 		logrus.InfoLevel:  syslog.LOG_INFO,
 		logrus.DebugLevel: syslog.LOG_DEBUG,
 	}
+
+	levelStringToLogrusLevel = map[string]logrus.Level{
+		"panic":   logrus.PanicLevel,
+		"error":   logrus.ErrorLevel,
+		"warning": logrus.WarnLevel,
+		"info":    logrus.InfoLevel,
+		"debug":   logrus.DebugLevel,
+	}
+
+	options map[string]string
 )
 
 // InitializeDefaultLogger returns a logrus Logger with a custom text formatter.
@@ -65,16 +76,36 @@ func InitializeDefaultLogger() *logrus.Logger {
 	return logger
 }
 
+// GetLogLevelFromConfig returns what the log level provided via global
+// configuration. If the logging level is invalid, ok will be false.
+func GetLogLevelFromConfig() (logrus.Level, bool) {
+	lvl, ok := levelStringToLogrusLevel[strings.ToLower(options[Level])]
+	return lvl, ok
+}
+
+func setupLogLevel(logOpts map[string]string) logrus.Level {
+	if levelOpt, ok := logOpts[Level]; ok {
+		if convertedLevel, ok := GetLogLevelFromConfig(); ok {
+			return convertedLevel
+		}
+		DefaultLogger.Warningf("invalid logging level provided: %s; setting to %s", levelOpt, DefaultLogLevel)
+	}
+	return DefaultLogLevel
+}
+
 // SetupLogging sets up each logging service provided in loggers and configures
 // each logger with the provided logOpts.
 func SetupLogging(loggers []string, logOpts map[string]string, tag string, debug bool) error {
+	options = logOpts
+
 	// Set default logger to output to stdout if no loggers are provided.
 	if len(loggers) == 0 {
 		// TODO: switch to a per-logger version when we upgrade to logrus >1.0.3
 		logrus.SetOutput(os.Stdout)
 	}
 
-	SetLogLevel(DefaultLogLevel)
+	level := setupLogLevel(options)
+	SetLogLevel(level)
 	ToggleDebugLogs(debug)
 
 	// always suppress the default logger so libraries don't print things
@@ -85,7 +116,7 @@ func SetupLogging(loggers []string, logOpts map[string]string, tag string, debug
 	for _, logger := range loggers {
 		switch logger {
 		case Syslog:
-			valuesToValidate := getLogDriverConfig(Syslog, logOpts)
+			valuesToValidate := getLogDriverConfig(Syslog, options)
 			err := validateOpts(Syslog, valuesToValidate, syslogOpts)
 			if err != nil {
 				return err
