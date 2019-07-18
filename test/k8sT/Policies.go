@@ -90,7 +90,7 @@ var _ = Describe("K8sPolicyTest", func() {
 			ciliumPod        string
 			clusterIP        string
 			appPods          map[string]string
-			namespaceForTest = "basicTest"
+			namespaceForTest = "basictest"
 		)
 
 		importPolicy := func(file, name string) {
@@ -147,8 +147,8 @@ var _ = Describe("K8sPolicyTest", func() {
 		}
 
 		BeforeAll(func() {
-			kubectl.NamespaceCreate(namespaceForTest)
-			kubectl.Apply(demoPath)
+			kubectl.NamespaceCreate(namespaceForTest).ExpectSuccess("could not create namespace")
+			kubectl.Apply(demoPath, namespaceForTest).ExpectSuccess("could not create resource")
 
 			err := kubectl.WaitforPods(namespaceForTest, "-l zgroup=testapp", helpers.HelperTimeout)
 			Expect(err).Should(BeNil(), "Test pods are not ready after timeout")
@@ -185,7 +185,7 @@ var _ = Describe("K8sPolicyTest", func() {
 		})
 
 		AfterEach(func() {
-			cmd := fmt.Sprintf("%s delete --all cnp,netpol", helpers.KubectlCmd)
+			cmd := fmt.Sprintf("%s delete --all cnp,netpol -n %s", helpers.KubectlCmd, namespaceForTest)
 			_ = kubectl.Exec(cmd)
 		})
 
@@ -205,14 +205,14 @@ var _ = Describe("K8sPolicyTest", func() {
 			}
 
 			trace := kubectl.CiliumExec(ciliumPod, fmt.Sprintf(
-				"cilium policy trace --src-k8s-pod default:%s --dst-k8s-pod default:%s --dport 80/TCP",
-				appPods[helpers.App2], appPods[helpers.App1]))
+				"cilium policy trace --src-k8s-pod %s:%s --dst-k8s-pod %s:%s --dport 80/TCP",
+				namespaceForTest, appPods[helpers.App2], namespaceForTest, appPods[helpers.App1]))
 			trace.ExpectSuccess(trace.CombineOutput().String())
 			trace.ExpectContains("Final verdict: ALLOWED", "Policy trace output mismatch")
 
 			trace = kubectl.CiliumExec(ciliumPod, fmt.Sprintf(
-				"cilium policy trace --src-k8s-pod default:%s --dst-k8s-pod default:%s",
-				appPods[helpers.App3], appPods[helpers.App1]))
+				"cilium policy trace --src-k8s-pod %s:%s --dst-k8s-pod %s:%s",
+				namespaceForTest, appPods[helpers.App3], namespaceForTest, appPods[helpers.App1]))
 			trace.ExpectSuccess(trace.CombineOutput().String())
 			trace.ExpectContains("Final verdict: DENIED", "Policy trace output mismatch")
 
@@ -301,14 +301,14 @@ var _ = Describe("K8sPolicyTest", func() {
 			}
 
 			trace := kubectl.CiliumExec(ciliumPod, fmt.Sprintf(
-				"cilium policy trace --src-k8s-pod default:%s --dst-k8s-pod default:%s --dport 80/TCP",
-				appPods[helpers.App2], appPods[helpers.App1]))
+				"cilium policy trace --src-k8s-pod %s:%s --dst-k8s-pod %s:%s --dport 80/TCP",
+				namespaceForTest, appPods[helpers.App2], namespaceForTest, appPods[helpers.App1]))
 			trace.ExpectSuccess(trace.CombineOutput().String())
 			trace.ExpectContains("Final verdict: ALLOWED", "Policy trace output mismatch")
 
 			trace = kubectl.CiliumExec(ciliumPod, fmt.Sprintf(
-				"cilium policy trace --src-k8s-pod default:%s --dst-k8s-pod default:%s",
-				appPods[helpers.App3], appPods[helpers.App1]))
+				"cilium policy trace --src-k8s-pod %s:%s --dst-k8s-pod %s:%s",
+				namespaceForTest, appPods[helpers.App3], namespaceForTest, appPods[helpers.App1]))
 			trace.ExpectSuccess(trace.CombineOutput().String())
 			trace.ExpectContains("Final verdict: DENIED", "Policy trace output mismatch")
 
@@ -967,7 +967,7 @@ EOF`, k, v)
 
 			By("Applying Policy in %q namespace", secondNS)
 			_, err = kubectl.CiliumPolicyAction(
-				helpers.DefaultNamespace, netpolNsSelector, helpers.KubectlApply, helpers.HelperTimeout)
+				secondNS, netpolNsSelector, helpers.KubectlApply, helpers.HelperTimeout)
 			Expect(err).Should(BeNil(), "Policy cannot be applied")
 
 			for _, pod := range []string{helpers.App2, helpers.App3} {
@@ -988,7 +988,7 @@ EOF`, k, v)
 
 			By("Delete Kubernetes Network Policies in %q namespace", secondNS)
 			_, err = kubectl.CiliumPolicyAction(
-				helpers.DefaultNamespace, netpolNsSelector, helpers.KubectlDelete, helpers.HelperTimeout)
+				secondNS, netpolNsSelector, helpers.KubectlDelete, helpers.HelperTimeout)
 			Expect(err).Should(BeNil(), "Policy %q cannot be deleted", netpolNsSelector)
 
 			for _, pod := range []string{helpers.App2, helpers.App3} {
